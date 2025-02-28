@@ -21,8 +21,27 @@ export default function Home() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isCorrect, setIsCorrect] = useState(false);
-  const [guessHistory, setGuessHistory] = useState<GuessRecord[]>([]);
+  const [guessHistory, setGuessHistory] = useState<GuessRecord[]>(() => {
+    if (typeof window !== 'undefined') {
+      const date = formatDate(new Date()).replace(/-/g, "");
+      const savedHistory = localStorage.getItem(`guessHistory_${date}`);
+      if (savedHistory) {
+        const history = JSON.parse(savedHistory);
+        setGuessCount(history.length);
+        setIsCorrect(history.some((record: GuessRecord) => record.similarity === 1));
+        return history.sort((a: GuessRecord, b: GuessRecord) => b.similarity - a.similarity);
+      }
+    }
+    return [];
+  });
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // 保存猜词记录到localStorage
+  const saveGuessHistory = (date: string, history: GuessRecord[]) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`guessHistory_${date}`, JSON.stringify(history));
+    }
+  };
 
   const showToast = (message: string, type: Toast['type'] = 'success') => {
     const id = Date.now();
@@ -66,7 +85,14 @@ export default function Home() {
       
       setIsCorrect(data.correct);
       setGuessCount(prev => prev + 1);
-      setGuessHistory(prev => [newRecord, ...prev]);
+      
+      // 更新历史记录并按相似度排序
+      const updatedHistory = [...guessHistory, newRecord].sort((a, b) => b.similarity - a.similarity);
+      setGuessHistory(updatedHistory);
+      
+      // 保存到localStorage
+      saveGuessHistory(date, updatedHistory);
+      
       setGuess("");
 
       if (data.correct) {
@@ -85,10 +111,21 @@ export default function Home() {
   const handleDateSelect = async (date: Date) => {
     setSelectedDate(date);
     setShowDatePicker(false);
-    // 重置游戏状态
-    setGuessCount(0);
-    setIsCorrect(false);
-    setGuessHistory([]);
+    
+    // 加载选中日期的历史记录
+    const selectedDateStr = formatDate(date).replace(/-/g, "");
+    const savedHistory = localStorage.getItem(`guessHistory_${selectedDateStr}`);
+    if (savedHistory) {
+      const history = JSON.parse(savedHistory);
+      setGuessHistory(history.sort((a: GuessRecord, b: GuessRecord) => b.similarity - a.similarity));
+      setGuessCount(history.length);
+      setIsCorrect(history.some((record: GuessRecord) => record.similarity === 1));
+    } else {
+      // 重置游戏状态
+      setGuessCount(0);
+      setIsCorrect(false);
+      setGuessHistory([]);
+    }
   };
 
   // 根据相似度获取颜色
@@ -211,6 +248,11 @@ export default function Home() {
             type="text"
             value={guess}
             onChange={(e) => setGuess(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !isCorrect && guess) {
+                handleGuess();
+              }
+            }}
             placeholder="任意猜一个词汇......"
             className="flex-1 p-3 border rounded-lg"
             disabled={isCorrect}
