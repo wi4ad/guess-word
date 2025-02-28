@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 
 interface GuessRecord {
@@ -16,32 +16,48 @@ interface Toast {
 }
 
 export default function Home() {
+  const formatDate = (date: Date) => {
+    return date.toISOString().split('T')[0];
+  };
+
   const [guess, setGuess] = useState("");
   const [guessCount, setGuessCount] = useState(0);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [isCorrect, setIsCorrect] = useState(false);
-  const [guessHistory, setGuessHistory] = useState<GuessRecord[]>(() => {
-    if (typeof window !== 'undefined') {
-      const date = formatDate(new Date()).replace(/-/g, "");
-      const savedHistory = localStorage.getItem(`guessHistory_${date}`);
-      if (savedHistory) {
-        const history = JSON.parse(savedHistory);
-        setGuessCount(history.length);
-        setIsCorrect(history.some((record: GuessRecord) => record.similarity === 1));
-        return history.sort((a: GuessRecord, b: GuessRecord) => b.similarity - a.similarity);
-      }
-    }
-    return [];
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
   });
+  const [isCorrect, setIsCorrect] = useState(false);
+  const [guessHistory, setGuessHistory] = useState<GuessRecord[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
 
   // 保存猜词记录到localStorage
   const saveGuessHistory = (date: string, history: GuessRecord[]) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(`guessHistory_${date}`, JSON.stringify(history));
+    localStorage.setItem(`guessHistory_${date}`, JSON.stringify(history));
+  };
+
+  // 加载历史记录
+  const loadGuessHistory = (date: Date) => {
+    const dateStr = formatDate(date).replace(/-/g, "");
+    const savedHistory = localStorage.getItem(`guessHistory_${dateStr}`);
+    if (savedHistory) {
+      const history = JSON.parse(savedHistory);
+      setGuessHistory(history.sort((a: GuessRecord, b: GuessRecord) => b.similarity - a.similarity));
+      setGuessCount(history.length);
+      setIsCorrect(history.some((record: GuessRecord) => record.similarity === 1));
+    } else {
+      setGuessCount(0);
+      setIsCorrect(false);
+      setGuessHistory([]);
     }
   };
+
+  // 在客户端加载初始历史记录
+  useEffect(() => {
+    loadGuessHistory(selectedDate);
+  }, []);
 
   const showToast = (message: string, type: Toast['type'] = 'success') => {
     const id = Date.now();
@@ -104,28 +120,12 @@ export default function Home() {
     }
   };
 
-  const formatDate = (date: Date) => {
-    return date.toISOString().split('T')[0];
-  };
-
-  const handleDateSelect = async (date: Date) => {
-    setSelectedDate(date);
+  const handleDateSelect = (date: Date) => {
+    const newDate = new Date(date);
+    newDate.setHours(0, 0, 0, 0);
+    setSelectedDate(newDate);
     setShowDatePicker(false);
-    
-    // 加载选中日期的历史记录
-    const selectedDateStr = formatDate(date).replace(/-/g, "");
-    const savedHistory = localStorage.getItem(`guessHistory_${selectedDateStr}`);
-    if (savedHistory) {
-      const history = JSON.parse(savedHistory);
-      setGuessHistory(history.sort((a: GuessRecord, b: GuessRecord) => b.similarity - a.similarity));
-      setGuessCount(history.length);
-      setIsCorrect(history.some((record: GuessRecord) => record.similarity === 1));
-    } else {
-      // 重置游戏状态
-      setGuessCount(0);
-      setIsCorrect(false);
-      setGuessHistory([]);
-    }
+    loadGuessHistory(newDate);
   };
 
   // 根据相似度获取颜色
@@ -248,8 +248,10 @@ export default function Home() {
             type="text"
             value={guess}
             onChange={(e) => setGuess(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !isCorrect && guess) {
+              if (e.key === 'Enter' && isFocused && !isCorrect && guess) {
                 handleGuess();
               }
             }}
